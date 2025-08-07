@@ -37,6 +37,7 @@ def kf_eigens(fisher: dict)-> dict:
 
 
 def invert_cholesky(fisher: dict,
+                    eigvals: dict(),
                     )-> dict:
     """Compute inverse cholesky of each fisher (Q,H) component 
     Input: dict: fisher[name] = (Q,H)
@@ -53,10 +54,15 @@ def invert_cholesky(fisher: dict,
     progress_bar = tqdm(enumerate(fisher.items()))
 
     for index, (name, value) in progress_bar:
+        q_eigs, h_eigs = eigvals[name]
+        min_q_eigs, min_h_eigs = torch.min(q_eigs), torch.min(h_eigs)
+        first_eps = torch.abs(min_q_eigs) if min_q_eigs < 0 else 0
+        second_eps = torch.abs(min_h_eigs) if min_h_eigs < 0 else 0
+
         first, second = value
 
-        first = first + eps*torch.eye(first.shape[0]).to(first.device)
-        second = second + eps*torch.eye(second.shape[0]).to(second.device)
+        first = first + (first_eps + eps)*torch.eye(first.shape[0]).to(first.device)
+        second = second + (second_eps + eps)*torch.eye(second.shape[0]).to(second.device)
 
         first = (first + first.t()) / 2.0
         second = (second + second.t()) / 2.0
@@ -144,3 +150,19 @@ def kf_inner(grad_1: dict,
             layer_inner_products[idx] = q*h
 
     return torch.sum(layer_inner_products)
+
+
+
+def random_fisher(size, device):
+    """Generate a random positive definite symmetric matrix"""
+    # Generate random normal matrix
+    A = torch.randn(size, size, device=device)
+    
+    # Make symmetric (A + A^T)/2
+    symmetric = (A + A.T) / 2
+    
+    # Ensure positive definite by adding a multiple of identity
+    # The smallest eigenvalue will be at least 'min_eig'
+    min_eig = 0.1  # You can adjust this as needed
+    return symmetric + (min_eig + torch.abs(torch.rand(1, device=device))) * torch.eye(size, device=device)
+
