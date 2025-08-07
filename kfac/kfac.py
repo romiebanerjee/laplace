@@ -36,20 +36,9 @@ class KFAC(ABC):
 
         self.model = model
         self.model_state = copy.deepcopy(model.state_dict())
-        self.layer_types = list()
-        if isinstance(layer_types, str):
-            self.layer_types.append(layer_types)
-        elif isinstance(layer_types, list):
-            if layer_types:
-                self.layer_types.extend(layer_types)
-            else:
-                self.layer_types.extend(['Linear', 'Conv2d', 'MultiheadAttention'])
-        elif layer_types is None:
-            self.layer_types.extend(['Linear', 'Conv2d', 'MultiheadAttention'])
-        else:
-            raise TypeError
-        for _type in self.layer_types:
-            assert _type in ['Linear', 'Conv2d', 'MultiheadAttention']
+        self.layer_types = ['Linear', 'Conv2d', 'MultiheadAttention']
+
+
         self.fisher = dict()
         self.invchol = dict()
         self.invfisher = dict()
@@ -106,11 +95,10 @@ class KFAC(ABC):
                 if layer.__class__.__name__ in ['Linear', 'Conv2d']:
                     if name in self.fisher.keys():
                         _sample = self.sample(name)
-                        if _sample is not None:
-                            if eps is not None:
-                                _sample*= eps
+                        if eps is not None:
+                            _sample*= eps
 
-                            self._replace(_sample, layer.weight, layer.bias)
+                        self._replace(_sample, layer.weight, layer.bias)
                     
 
     def update_grad(self, log):
@@ -256,12 +244,10 @@ class KFAC(ABC):
     def sample(self,
                name: str) -> Tensor:
         assert self.invchol, "Inverse Cholesky state dict is empty. Did you call 'invert' prior to this?"
+        
         first, second = self.invchol[name]
-        if not (first, second) == (None, None):
-            z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
-            sample = (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
-        else:
-            sample = None
+        z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
+        sample = (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
         return sample
     
     
