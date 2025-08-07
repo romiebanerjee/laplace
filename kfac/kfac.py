@@ -62,6 +62,8 @@ class KFAC(ABC):
  
         self.eigenspectrum = dict()
 
+        self.state = dict()
+
         for layer in model.modules():
             if layer.__class__.__name__ in self.layer_types:
                 if layer.__class__.__name__ in ['Linear', 'Conv2d']:
@@ -104,10 +106,11 @@ class KFAC(ABC):
                 if layer.__class__.__name__ in ['Linear', 'Conv2d']:
                     if name in self.fisher.keys():
                         _sample = self.sample(name)
-                        if eps is not None:
-                            _sample*= eps
-                        
-                        self._replace(_sample, layer.weight, layer.bias)
+                        if _sample is not None:
+                            if eps is not None:
+                                _sample*= eps
+                                
+                            self._replace(_sample, layer.weight, layer.bias)
 
 
     def update_grad(self, log):
@@ -253,8 +256,12 @@ class KFAC(ABC):
                name: str) -> Tensor:
         assert self.invchol, "Inverse Cholesky state dict is empty. Did you call 'invert' prior to this?"
         first, second = self.invchol[name]
-        z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
-        return (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
+        if not (first, second) == (None, None):
+            z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
+            sample = (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
+        else:
+            sample = None
+        return sample
     
     
     def select_eigen(self,

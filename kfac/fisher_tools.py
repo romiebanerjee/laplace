@@ -117,7 +117,7 @@ def kf_inner(grad_1: dict,
     inner product of gradients in KF form, w.r.t. inverse fisher metric
 
     The inner product <x,y>_A, w.r.t a symmetric bilinear form A, is the matrix product x^T@A@y
-    
+
     For every layer `name` compute: grad_1[name].t @ inverse_fisher[name] @ grad_2[name]
     Use the kronecker factorization
     grad_1[name] = (q_1, h_1)
@@ -128,19 +128,19 @@ def kf_inner(grad_1: dict,
     = (q_1^T @ Q^{-1} @ q_2) \otimes (h_1^T @ H^{-1} @ h_2)
     '''
 
-    assert len(grad_1) == len(grad_2) == len(inverse_fisher)
+    # assert len(grad_1) == len(grad_2) == len(inverse_fisher)
 
     layer_inner_products = torch.empty(len(grad_1))
 
     for idx , (key, value) in enumerate(inverse_fisher.items()):
-        # if key in grad_1.keys() and key in grad_2.keys():
-        forward_1, backward_1 = grad_1[key]
-        forward_2, backward_2 = grad_2[key]
-        Q_inv, H_inv = value
+        if not inverse_fisher[key] == (None, None):
+            forward_1, backward_1 = grad_1[key]
+            forward_2, backward_2 = grad_2[key]
+            Q_inv, H_inv = value
 
-        q = forward_1.t() @ Q_inv @ forward_2
-        h = backward_1.t() @ H_inv @ backward_2
+            q = forward_1.t() @ Q_inv @ forward_2
+            h = backward_1.t() @ H_inv @ backward_2
 
-        layer_inner_products[idx] = q*h
+            layer_inner_products[idx] = q*h
 
     return torch.sum(layer_inner_products)
