@@ -79,10 +79,10 @@ class KFAC(ABC):
             weight: The weights of one model layer.
             bias: The bias of one model layer. Optional.
         """
-        if bias is not None:
-            bias_sample = sample[:, -1].contiguous().view(*bias.shape)
-            bias.data.add_(bias_sample)
-            sample = sample[:, :-1]
+        # if bias is not None:
+        #     bias_sample = sample[:, -1].contiguous().view(*bias.shape)
+        #     bias.data.add_(bias_sample)
+        #     sample = sample[:, :-1]
         weight.data.add_(sample.contiguous().view(*weight.shape))
 
     def sample_and_replace(self,
@@ -244,7 +244,7 @@ class KFAC(ABC):
     def sample(self,
                name: str) -> Tensor:
         assert self.invchol, "Inverse Cholesky state dict is empty. Did you call 'invert' prior to this?"
-        
+
         first, second = self.invchol[name]
         z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
         sample = (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
