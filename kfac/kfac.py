@@ -1,12 +1,12 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Union, List, Any, Dict
 import copy
 
-from numpy.linalg import inv, cholesky
 import torch
 from torch import Tensor
 from torch.nn import Module, Sequential
 import torch.nn.functional as F
+from .fisher_tools import kf_eigens, invert_cholesky, invert_fisher, kf_inner
 
 class KFAC(ABC):
     r"""The Kronecker-factored Fisher information matrix approximation.
@@ -203,95 +203,51 @@ class KFAC(ABC):
                             print(f'None gradient for layer {name}')
 
 
-
     def invert_cholesky(self,
                         ):
         """Compute inverse cholesky of each fisher (Q,H) component """
         
-        assert self.fisher, "State dict is empty. Did you call 'update' prior to this?"
+        assert self.fisher, "fisher is empty. Did you call 'update' prior to this?"
 
         print(f"Computing inverted Cholesky of fisher ...")
 
-        assert self.eigvals, "Eigenvalues missing"
-        #regularize so that (Q,H) are positive definite and non-singular
-        eps = 1e-10
-        add = [torch.min(torch.min(x[0]), torch.min(x[1])) for x in list(self.eigvals.values())]
-        add = [torch.abs(x) + eps if x<=0 else 0. for x in add]
-        multiply = [1.]*len(self.eigvals)
+        self.invchol = invert_cholesky(self.fisher)
 
-        for index, (name, value) in enumerate(self.fisher.items()):
-            # print(f"Computing Inverse Cholesky of KF-fisher for layer {name}")
-
-            if not isinstance(add, (float, int)) and not isinstance(multiply, (float, int)):
-                assert len(add) == len(multiply) == len(self.fisher)
-                n, s = add[index], multiply[index]
-            else:
-                n, s = float(add), float(multiply)
-
-
-            first, second = value
-
-            diag_frst = torch.diag(first.new(first.shape[0]).fill_(n))
-            diag_scnd = torch.diag(second.new(second.shape[0]).fill_(n))
-
-            reg_frst = s * first + diag_frst
-            reg_scnd = s * second + diag_scnd
-
-            reg_frst = (reg_frst + reg_frst.t()) / 2.0
-            reg_scnd = (reg_scnd + reg_scnd.t()) / 2.0
-
-            try:
-                inv_chol_frst = torch.pinverse(torch.linalg.cholesky(reg_frst))
-                inv_chol_scnd = torch.pinverse(torch.linalg.cholesky(reg_scnd))
-            
-            except RuntimeError:
-                print(f'Unable to invert cholesky in layer {name}')
-    
-
-            self.invchol[name] = (inv_chol_frst, inv_chol_scnd)
 
     def invert_fisher(self):
         """Compute inverse of each fisher (Q,H) component """
         
-        assert self.fisher, "State dict is empty. Did you call 'update' prior to this?"
-        assert self.eigvals, "Need eigenvalues to continue"
+        assert self.fisher, "fisher is empty. Did you call 'update' prior to this?"
 
-
-        eps = 1e-10
-        add = [torch.min(torch.min(x[0]), torch.min(x[1])) for x in list(self.eigvals.values())]
-        add = [torch.abs(x) + eps if x<=0 else 0. for x in add]
-        multiply = [1.]*len(self.eigvals)
-
-        print(f"Computing inverse fisher ...")
-        for index, (name, value) in enumerate(self.fisher.items()):
-            # print(f"Computing Inverse of KF-fisher for layer {name}")
-
-            if not isinstance(add, (float, int)) and not isinstance(multiply, (float, int)):
-                assert len(add) == len(multiply) == len(self.fisher)
-                n, s = add[index], multiply[index]
-            else:
-                n, s = float(add), float(multiply)
-
-            first, second = value
-
-            diag_frst = torch.diag(first.new(first.shape[0]).fill_(n))
-            diag_scnd = torch.diag(second.new(second.shape[0]).fill_(n))
-
-            reg_frst = s * first + diag_frst
-            reg_scnd = s * second + diag_scnd
-
-            reg_frst = (reg_frst + reg_frst.t()) / 2.0
-            reg_scnd = (reg_scnd + reg_scnd.t()) / 2.0
-
-            try:
-                inv_frst = torch.pinverse(reg_frst)
-                inv_scnd = torch.pinverse(reg_scnd)
+        if not self.invchol:
+            self.invchol = invert_cholesky(self.fisher)
+            self.invfisher = invert_fisher(self.invchol)
             
-            except RuntimeError:
-                print(f'Unable to invert in layer {name}')
-    
-            self.invfisher[name] = (inv_frst, inv_scnd)
+        else:
+            self.invfisher = invert_fisher(self.invchol)
 
+
+    
+    def kf_inner(self, grad_1, grad_2):
+        r'''
+        Riemann metric of curved space of NNs
+        AT a given point of the neural manifold (trained model: self.model) computes the inner-product of tangent vectors (gradients) according to the curvature 
+        '''
+        assert self.fisher, "fisher state is empty"
+        assert self.invfisher, "fisher is not inverted"
+
+        return kf_inner(grad_1, grad_2, self.invfisher)
+
+ 
+    def kf_eigens(self):
+        r"""
+        Calculate layer-wise eigen-spectrum of the KFAC factors
+        """
+        print("Calculating eigenvalues of the fisher")
+        eigvals, eigvecs = kf_eigens(self.fisher)
+        
+        self.eigvals, self.eigvecs = eigvals, eigvecs
+        
 
     def sample(self,
                name: str) -> Tensor:
@@ -300,56 +256,6 @@ class KFAC(ABC):
         z = torch.randn(first.size(0), second.size(0), device=first.device, dtype=first.dtype)
         return (first @ z @ second.t()).t()  # Final transpose because PyTorch uses channels first
     
-    
-    def kf_inner(self, grad_1, grad_2):
-        r'''
-        Riemann metric of curved space of NNs
-        AT a given point of the neural manifold (trained model: self.model) computes the inner-product of tangent vectors (gradients) according to the curvature 
-        Input:
-        grad_1: KFGradcho
-        grad_2: KFGrad
-        Output: float
-        '''
-        assert len(grad_1) == len(grad_2) == len(self.invfisher)
-
-        layer_inner_products = torch.empty(len(grad_1))
-
-        for idx , (key, value) in enumerate(self.invfisher.items()):
-            # if key in grad_1.keys() and key in grad_2.keys():
-            forward_1, backward_1 = grad_1[key]
-            forward_2, backward_2 = grad_2[key]
-            Q_inv, H_inv = value
-
-            q = forward_1.t() @ Q_inv @ forward_2
-            h = backward_1.t() @ H_inv @ backward_2
-
-            layer_inner_products[idx] = q*h
-
-        return torch.sum(layer_inner_products)
-    
-    def kf_eigens(self):
-        r"""
-        Calculate layer-wise eigen-spectrum of the KFAC factors
-        """
-        print("Calculating eigenvalues of the fisher")
-        n = len(self.fisher.keys())
-        for (i, (name, (xxt, ggt))) in enumerate(self.fisher.items()):
-            # print(f"Computing eigenvalues/vectors for layer {name} index :[{i}/{n}]")
-            try:
-                sym_xxt, sym_ggt = xxt + xxt.t(), ggt + ggt.t()
-                #regularize
-                sym_xxt += 1e-10*torch.eye(sym_xxt.shape[0]).to(sym_xxt.device)
-                sym_ggt += 1e-10*torch.eye(sym_ggt.shape[0]).to(sym_ggt.device)
-                
-                xxt_eigvals, xxt_eigvecs = torch.linalg.eigh(sym_xxt)
-                ggt_eigvals, ggt_eigvecs = torch.linalg.eigh(sym_ggt)
-
-                self.eigvecs[name]=(xxt_eigvecs, ggt_eigvecs)
-                self.eigvals[name]=(xxt_eigvals, ggt_eigvals)
-
-            except RuntimeError:
-                print(f'Unable to compute eigenvalues in layer {name} index :[{i}/{n}]')
-        
     
     def select_eigen(self,
                      name: str,
