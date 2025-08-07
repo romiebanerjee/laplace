@@ -77,7 +77,7 @@ def invert_cholesky(fisher: dict,
             print("\n")
             print(f"Error in layer {name} index :[{index}/{n}]")
             print(err)
-            invchol[name] = (None, None)
+            invchol[name] = (torch.zeros(first.shape, first.device), torch.zeros(second.shape, second.device))
 
     return invchol
 
@@ -109,8 +109,7 @@ def invert_fisher(
             print("\n")
             print(f"Error in layer {name} index :[{index}/{n}]")
             print(err)
-            inv_frst = None
-            inv_scnd = None
+            invfisher[name] = (torch.zeros(first.shape, device = first.device), torch.zeros(second.shape, device = second.device))
 
     return invfisher
 
@@ -139,15 +138,15 @@ def kf_inner(grad_1: dict,
     layer_inner_products = torch.empty(len(grad_1))
 
     for idx , (key, value) in enumerate(inverse_fisher.items()):
-        if not inverse_fisher[key] == (None, None):
-            forward_1, backward_1 = grad_1[key]
-            forward_2, backward_2 = grad_2[key]
-            Q_inv, H_inv = value
 
-            q = forward_1.t() @ Q_inv @ forward_2
-            h = backward_1.t() @ H_inv @ backward_2
+        forward_1, backward_1 = grad_1[key]
+        forward_2, backward_2 = grad_2[key]
+        Q_inv, H_inv = value
 
-            layer_inner_products[idx] = q*h
+        q = forward_1.t() @ Q_inv @ forward_2
+        h = backward_1.t() @ H_inv @ backward_2
+
+        layer_inner_products[idx] = q*h
 
     return torch.sum(layer_inner_products)
 
