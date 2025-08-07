@@ -77,7 +77,7 @@ def invert_cholesky(fisher: dict,
             print("\n")
             print(f"Error in layer {name} index :[{index}/{n}]")
             print(err)
-            invchol[name] = (torch.zeros(first.shape, first.device), torch.zeros(second.shape, second.device))
+            invchol[name] = (torch.zeros(first.shape, device = first.device), torch.zeros(second.shape, device = second.device))
 
     return invchol
 
