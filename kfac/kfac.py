@@ -109,9 +109,9 @@ class KFAC(ABC):
                         if _sample is not None:
                             if eps is not None:
                                 _sample*= eps
-                                
-                            self._replace(_sample, layer.weight, layer.bias)
 
+                            self._replace(_sample, layer.weight, layer.bias)
+                    
 
     def update_grad(self, log):
         """Computes Kronecker decomposition of layer-wise gradients via forward and backward vectors.
@@ -211,10 +211,11 @@ class KFAC(ABC):
         """Compute inverse cholesky of each fisher (Q,H) component """
         
         assert self.fisher, "fisher is empty. Did you call 'update' prior to this?"
+        assert self.eigvals
 
         print(f"Computing inverted Cholesky of fisher ...")
 
-        self.invchol = invert_cholesky(self.fisher)
+        self.invchol = invert_cholesky(self.fisher, self.eigvals)
 
 
     def invert_fisher(self):
