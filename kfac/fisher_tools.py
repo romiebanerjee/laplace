@@ -133,7 +133,9 @@ def kf_inner(grad_1: dict,
     = (q_1^T @ Q^{-1} @ q_2) \otimes (h_1^T @ H^{-1} @ h_2)
     '''
 
-    # assert len(grad_1) == len(grad_2) == len(inverse_fisher)
+    assert len(grad_1) == len(grad_2) == len(inverse_fisher), "gradient and inverse fisher dimension mismatch"
+
+    n = len(inverse_fisher)
 
     layer_inner_products = torch.empty(len(grad_1))
 
@@ -143,10 +145,15 @@ def kf_inner(grad_1: dict,
         forward_2, backward_2 = grad_2[key]
         Q_inv, H_inv = value
 
-        q = forward_1.t() @ Q_inv @ forward_2
-        h = backward_1.t() @ H_inv @ backward_2
+        try:
+            q = forward_1.t() @ Q_inv @ forward_2
+            h = backward_1.t() @ H_inv @ backward_2
 
-        layer_inner_products[idx] = q*h
+            layer_inner_products[idx] = q*h
+
+        except Exception as error:
+            print(f"Error in layer [{idx}]/[{n}]")
+            print(error)
 
     return torch.sum(layer_inner_products)
 
