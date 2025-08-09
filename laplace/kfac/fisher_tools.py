@@ -29,8 +29,8 @@ def kf_eigens(fisher: dict)-> dict:
             print("\n")
             print(f'Error in layer {name} index :[{i}/{n}]')
             print(err)
-            eigvals[name] = (None)
-            eigvecs[name] = (None)
+            eigvals[name] = None
+            eigvecs[name] = None
 
 
     return eigvals, eigvecs
@@ -54,10 +54,14 @@ def invert_cholesky(fisher: dict,
     progress_bar = tqdm(enumerate(fisher.items()))
 
     for index, (name, value) in progress_bar:
-        q_eigs, h_eigs = eigvals[name]
-        min_q_eigs, min_h_eigs = torch.min(q_eigs), torch.min(h_eigs)
-        first_eps = torch.abs(min_q_eigs) if min_q_eigs < 0 else 0
-        second_eps = torch.abs(min_h_eigs) if min_h_eigs < 0 else 0
+
+        if eigvals[name]:     
+            q_eigs, h_eigs = eigvals[name]
+            min_q_eigs, min_h_eigs = torch.min(q_eigs), torch.min(h_eigs)
+            first_eps = torch.abs(min_q_eigs) if min_q_eigs < 0. else 0.
+            second_eps = torch.abs(min_h_eigs) if min_h_eigs < 0. else 0.
+        else:
+            first_eps, second_eps = 0. , 0. 
 
         first, second = value
 
