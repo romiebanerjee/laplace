@@ -1,4 +1,4 @@
-# Laplace-BNN 
+# Laplace-Bayesian-Neural-Networks
 
 **Author**: Romie Banerjee
 <!-- **Last Updated**: `YYYY-MM-DD`   -->
